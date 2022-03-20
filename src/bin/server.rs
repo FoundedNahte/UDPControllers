@@ -1,65 +1,25 @@
 use laminar::{Socket, Packet, SocketEvent};
 //use bincode::{deserialize, serialize};
-use udp_controllers::FromClientMessage;
+//use udp_controllers::FromClientMessage;
 use std::net::{SocketAddr, IpAddr, Ipv4Addr};
 use std::time::Duration;
 use std::thread;
 use std::collections::HashMap;
 use anyhow::Result;
 
-pub struct Config {
-    target: vigem_client::Xbox360Wired<vigem_client::Client>,
-    gamepad: vigem_client::XGamepad,
-    pub thumb_x: i32,
-    pub thumb_y: i32,
-    pub trigger_l: i32,
-    pub trigger_r: i32,
-}
-
-impl Config {
-    pub fn new() -> Self {
-        let thumb_x = 0;
-        let thumb_y = 0;
-        let trigger_l = 0;
-        let trigger_r = 0;
-
-        let client = vigem_client::Client::connect().unwrap();
-        let id = vigem_client::TargetId::XBOX360_WIRED;
-        let mut target = vigem_client::Xbox360Wired::new(client, id);
-        let gamepad = vigem_client::XGamepad { 
-            buttons: vigem_client::XButtons!( A | B | X | Y | LB | RB | START | BACK | UP | DOWN | RIGHT | LEFT),
-            ..Default::default()
-        };
-
-        target.plugin().unwrap();
-        target.wait_ready().unwrap();
-
-        Self {
-            target,
-            gamepad,
-            thumb_x,
-            thumb_y,
-            trigger_l,
-            trigger_r,
-        } 
-    }
-}
-
 fn main() -> Result<(), anyhow::Error> {
     let local_ip = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8888);
-
-    let mut server = Socket::bind(local_ip)?;
+    
+    let mut server = Socket::bind(local_ip)?; 
     let (packet_sender, packet_receiver) = (server.get_packet_sender(), server.get_event_receiver());
-
+    
     let _thread = thread::spawn(move || server.start_polling());
-
+    
     let mut connections: HashMap<SocketAddr, (vigem_client::Xbox360Wired::<vigem_client::Client>, vigem_client::XGamepad)> = HashMap::new();
-    //let mut connections: HashMap<SocketAddr, Config> = HashMap::new();  
-
+    
     loop {
         match packet_receiver.recv() {
             Ok(socket_event) => {
-                // CLOSURE TO ALLOW RETURNING FROM MATCH ARMS
                 (|| { match socket_event {
                     SocketEvent::Packet(packet) => {
                         let (target, gamepad) = match connections.get_mut(&packet.addr()) {
@@ -70,30 +30,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 println!("No connection present for {:?}", packet.addr());
                                 let message = Packet::reliable_unordered(
                                     packet.addr(),
-                                    bincode::serialize(&FromClientMessage::Connect).unwrap(),
-                                );
-
-                                match packet_sender.send(message) {
-                                    Ok(()) => {},
-                                    Err(e) => {
-                                        eprintln!("Failed to return handshake: {:?}", e);
-                                    }
-                                }
-
-                                return
-                            }
-                        };
-                    /*
-                    SocketEvent::Packet(packet) => {
-                        let config = match connections.get_mut(&packet.addr()) {
-                            Some(config) => {
-                                config
-                            },
-                            None => {
-                                println!("No connection present for {:?}", packet.addr());
-                                let message = Packet::reliable_unordered(
-                                    packet.addr(),
-                                    bincode::serialize(&FromClientMessage::Connect).unwrap(),
+                                    bincode::serialize(&0).expect("Error serializing connection message"),
                                 );
                                 
                                 match packet_sender.send(message) {
@@ -101,118 +38,75 @@ fn main() -> Result<(), anyhow::Error> {
                                     Err(e) => {
                                         eprintln!("Failed to return handshake: {:?}", e);
                                     }
-                                }
-                                
-                                return
+                                } 
+
+                                return 
                             }
                         };
-                        let target = &mut config.target;
-                        let mut gamepad = &mut config.gamepad;
-                       */
-                        let command: FromClientMessage = match bincode::deserialize(&packet.payload()) {
+                        
+                        let keys: Vec<u16> = match bincode::deserialize(&packet.payload()) {
                             Ok(command) => { command },
-                            Err(e) => { 
+                            Err(e) => {
                                 eprintln!("Error deserializing payload: {:?}", e);
                                 return;
-                            },
+                            }
                         };
+                       
+                        println!("{:?}", keys);
 
-                        println!("{:?}", command); 
-                        match command {
-                            // LEFT THUMBSTICK MOTION
-                            FromClientMessage::W => {
-                                //if config.thumb_y == 29999 {
-                                    //return;
-                                //}
-                                gamepad.thumb_ly = 29999;
-                                //config.thumb_y = 29999;
-                            },
-                            FromClientMessage::A => {
-                                //if config.thumb_x == -29999 {
-                                    //return;
-                                //}
-                                gamepad.thumb_lx = -29999;
-                                //config.thumb_x = -29999;
-                            },
-                            FromClientMessage::D => {
-                                //if config.thumb_x == 29999 {
-                                    //return;
-                                //}
-                                gamepad.thumb_lx = 29999;
-                                //config.thumb_x = 29999;
-                            },
-                            FromClientMessage::S => {
-                                //if config.thumb_y == -29999 {
-                                    //return;
-                                //}
-                                gamepad.thumb_ly = -29999;
-                                //config.thumb_y = -29999;
-                            },
-                            // A, B, X, Y BUTTONS
-                            FromClientMessage::Up => {
-                                gamepad.buttons = vigem_client::XButtons(0x8000);
-                            },
-                            FromClientMessage::Left => {
-                                gamepad.buttons = vigem_client::XButtons(0x4000);
-                            },
-                            FromClientMessage::Right => {
-                                gamepad.buttons = vigem_client::XButtons(0x2000);
-                            },
-                            FromClientMessage::Down => {
-                                gamepad.buttons = vigem_client::XButtons(0x1000);
-                            },
-                            // LEFT AND RIGHT BUMPERS
-                            FromClientMessage::Q => {
-                                gamepad.buttons = vigem_client::XButtons(0x0100);
-                            },
-                            FromClientMessage::E => {
-                                gamepad.buttons = vigem_client::XButtons(0x0200);
-                            },
-                            // START BUTTON
-                            FromClientMessage::P => {
-                                gamepad.buttons = vigem_client::XButtons(0x0010);
-                            },
-                            // BACK BUTTON
-                            FromClientMessage::O => {
-                                gamepad.buttons = vigem_client::XButtons(0x0020);
-                            },
-                            // RIGHT TRIGGER
-                            FromClientMessage::U => {
-                                gamepad.right_trigger = 255;
-                            },
-                            // LEFT TRIGGER
-                            FromClientMessage::Y => {
-                                gamepad.left_trigger = 255;
-                            },
-                            // D-PAD BUTTONS
-                            FromClientMessage::I => {
-                                gamepad.buttons = vigem_client::XButtons(0x0001);
-                            },
-                            FromClientMessage::J => {
-                                gamepad.buttons = vigem_client::XButtons(0x0004);
-                            },
-                            FromClientMessage::L => {
-                                gamepad.buttons = vigem_client::XButtons(0x0008);
-                            },
-                            FromClientMessage::K => {
-                                gamepad.buttons = vigem_client::XButtons(0x0002);
-                            },
-                            FromClientMessage::None => {
-                                gamepad.right_trigger = 0;
-                                gamepad.left_trigger = 0;
-                                gamepad.thumb_ly = 0;
-                                gamepad.thumb_lx = 0;
-                                gamepad.buttons = vigem_client::XButtons(0);
-                                //config.thumb_x = 0;
-                                //config.thumb_y = 0;
-                            },
-                            _ => {},
+                        gamepad.right_trigger = 0;
+                        gamepad.left_trigger = 0;
+                        gamepad.thumb_ly = 0;
+                        gamepad.thumb_lx = 0;
+                        gamepad.buttons = vigem_client::XButtons(0);
+
+                        for key in keys.iter() {
+                            match key {
+                                // W Left Joystick Up
+                                87 => { gamepad.thumb_ly = 29999; },
+                                // A Left Joystick Left
+                                65 => { gamepad.thumb_lx = -29999; },
+                                // D Left Joystick Right
+                                68 => { gamepad.thumb_lx = 29999; },
+                                // S Left Joystick Down
+                                83 => { gamepad.thumb_ly = -29999 },
+                                // Up-Arrow Y Button
+                                38 => { gamepad.buttons = vigem_client::XButtons(0x8000); },
+                                // Left-Arrow X Button
+                                37 => { gamepad.buttons = vigem_client::XButtons(0x4000); },
+                                // Right-Arrow B Button
+                                39 => { gamepad.buttons = vigem_client::XButtons(0x2000); },
+                                // Down-Arrow A Button
+                                40 => { gamepad.buttons = vigem_client::XButtons(0x1000); },
+                                // Q Left Bumper
+                                81 => { gamepad.buttons = vigem_client::XButtons(0x0100); },
+                                // E Right Bumper
+                                69 => { gamepad.buttons = vigem_client::XButtons(0x0200); },
+                                // P Start Button
+                                80 => { gamepad.buttons = vigem_client::XButtons(0x0010); },
+                                // O Back Button
+                                79 => { gamepad.buttons = vigem_client::XButtons(0x0020); },
+                                // U Right Trigger
+                                85 => { gamepad.right_trigger = 255; },
+                                // U Left Trigger
+                                89 => { gamepad.left_trigger = 255; },
+                                // I D-Pad UP
+                                73 => { gamepad.buttons = vigem_client::XButtons(0x0001); },
+                                // J D-Pad Left
+                                74 => { gamepad.buttons = vigem_client::XButtons(0x0004); },
+                                // L D-Pad Right
+                                76 => { gamepad.buttons = vigem_client::XButtons(0x0008); },
+                                // K D-Pad Down
+                                75 => { gamepad.buttons = vigem_client::XButtons(0x0002); },
+                                _ => {},
+                            }    
                         }
+                        
                         match target.update(&gamepad) {
                             Ok(()) => {},
                             Err(e) => {
                                 eprintln!("Error updating controller: {:?}", e);
-                            },
+                            }
                         }
 
                     },
@@ -220,25 +114,21 @@ fn main() -> Result<(), anyhow::Error> {
                         match connections.get(&addr) {
                             Some(_connection) => {},
                             None => {
-                                
-                                let client = vigem_client::Client::connect().unwrap();
+                                let client = vigem_client::Client::connect().expect("Can't retrieve vigem client: 159");
 
                                 let id = vigem_client::TargetId::XBOX360_WIRED;
                                 let mut target = vigem_client::Xbox360Wired::new(client, id);
-                                
-                                target.plugin().unwrap();
 
-                                target.wait_ready().unwrap();
+                                target.plugin().expect("Error pluging in target: 164");
+
+                                target.wait_ready().expect("Error: 166");
 
                                 let gamepad = vigem_client::XGamepad {
-                                    buttons: vigem_client::XButtons!(A | B | X | Y | LB | RB | START | BACK | UP | DOWN| RIGHT | LEFT),
+                                    buttons: vigem_client::XButtons!(A | B | X | Y | LB | RB | START | BACK | UP | DOWN | RIGHT | LEFT),
                                     ..Default::default()
                                 };
-                                
-                                
-                                //let config = Config::new();
 
-                                match connections.insert(addr, (target, gamepad)) {
+                                match connections.insert( addr, (target, gamepad)) {
                                     Some(_connection) => {},
                                     None => {
                                         println!("Successfully registered connection: {:?}", addr);
@@ -247,19 +137,10 @@ fn main() -> Result<(), anyhow::Error> {
                             },
                         }
                     },
-                    SocketEvent::Disconnect(addr) => {
-                       /* 
-                        match connections.remove(&addr) {
-                            Some((mut target, _gamepad)) => {
-                                target.unplug().unwrap();
-                            },
-                            None => { println!("Address not registered: {:?}", addr); },
-                        }
-                        */
-                    },
+                    SocketEvent::Disconnect(addr) => {},
                     _ => {},
                 }})();
-            }
+            },
             Err(e) => {
                 eprintln!("Something went wrong when receiving, error: {:?}", e);
             }

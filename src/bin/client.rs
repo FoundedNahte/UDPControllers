@@ -1,102 +1,60 @@
 use laminar::{Socket, Packet, SocketEvent};
 use bincode::{deserialize, serialize};
-use udp_controllers::FromClientMessage;
-use winput::{Vk, Action};
-use winput::message_loop;
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use udp_controllers::*;
+use keyboard_query::{DeviceQuery, DeviceState};
+use std::net::{SocketAddr, SocketAddrV4, IpAddr, Ipv4Addr};
 use std::time::{Duration};
 use std::thread;
 use anyhow::Result;
 
 fn main() -> Result<(), anyhow::Error> {
-    
     let local_ip = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 21032);
     let destination = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(71, 191, 175, 112)), 43243);
 
     let mut client = Socket::bind(local_ip)?;
-    
-    let (packet_sender, packet_receiver) = (client.get_packet_sender(), client.get_event_receiver());
 
+    let (packet_sender, packet_receiver) = (client.get_packet_sender(), client.get_event_receiver());
+    
     let _thread = thread::spawn(move || client.start_polling());
 
     let message = Packet::reliable_unordered(
         destination,
         bincode::serialize(&FromClientMessage::Connect)?,
     );
-
+    
     packet_sender.send(message)?;
 
     while let Ok(packet) = packet_receiver.recv() {
         match packet {
             SocketEvent::Packet(packet) => {
                 println!("Connected to server: {:?}", packet.addr());
-                break;            
+                break;
             },
             _ => {},
         }
     }
-
-    let input_receiver = message_loop::start().unwrap();
     
+    let device_state = DeviceState::new();
+    let mut prev_keys = vec![];
     loop {
-        match input_receiver.next_event() {
-            message_loop::Event::Keyboard {
-                vk,
-                action: Action::Press,
-                ..
-            } => {
-                let command = match vk {
-                    Vk::W => FromClientMessage::W,
-                    Vk::A => FromClientMessage::A,
-                    Vk::D => FromClientMessage::D,
-                    Vk::S => FromClientMessage::S,
-                    Vk::UpArrow => FromClientMessage::Up,
-                    Vk::LeftArrow => FromClientMessage::Left,
-                    Vk::RightArrow => FromClientMessage::Right,
-                    Vk::DownArrow => FromClientMessage::Down,
-                    Vk::Q => FromClientMessage::Q,
-                    Vk::E => FromClientMessage::E,
-                    Vk::P => FromClientMessage::P,
-                    Vk::O => FromClientMessage::O,
-                    Vk::U => FromClientMessage::U,
-                    Vk::Y => FromClientMessage::Y,
-                    Vk::I => FromClientMessage::I,
-                    Vk::K => FromClientMessage::K,
-                    Vk::L => FromClientMessage::L,
-                    Vk::J => FromClientMessage::J,
-                    _ => FromClientMessage::None,
-                };
-                
-                println!("{:?}", command);
-                let message = Packet::unreliable(
-                    destination,
-                    bincode::serialize(&command)?,
-                );
-
-                packet_sender.send(message)?;
-                //thread::sleep(Duration::from_millis(2));
-            },
-            message_loop::Event::Keyboard {
-                vk,
-                action: Action::Release,
-                ..
-            } => {
-                let message = Packet::unreliable(
-                    destination,
-                    bincode::serialize(&FromClientMessage::None)?,
-                );
-                packet_sender.send(message)?;
-            },
-            _ => {
-                let message = Packet::unreliable(
-                    destination,
-                    bincode::serialize(&FromClientMessage::None)?,
-                );
-                packet_sender.send(message)?;
-                //thread::sleep(Duration::from_millis(100));
-            },
+        let keys = device_state.get_keys();
+        if keys != prev_keys {
+            prev_keys = keys;
+            println!("{:?}", prev_keys);
+            let packet = Packet::unreliable(
+                destination,
+                bincode::serialize(&prev_keys)?,
+            );
+            packet_sender.send(packet)?;
+        } else {
+            let packet = Packet::unreliable(
+                destination,
+                bincode::serialize(&prev_keys)?,
+            );
+            packet_sender.send(packet)?;
         }
     }
-
+    
     Ok(())
+
 }
