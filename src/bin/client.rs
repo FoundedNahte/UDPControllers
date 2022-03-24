@@ -9,7 +9,7 @@ use anyhow::Result;
 
 fn main() -> Result<(), anyhow::Error> {
     let local_ip = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 21032);
-    let destination = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(71, 191, 175, 112)), 43243);
+    let destination = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 43243);
 
     let mut client = Socket::bind(local_ip)?;
 
