@@ -1,0 +1,14 @@
+[package]
+name = "ktc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.39.2", features = ["full"] }
+anyhow = "1.0.86"
+clap = { version = "4.5.13", features = ["derive"] }
+bytes = "1.7.1"
+rkyv = "0.7.44"
+toml = "0.8.19"
+device_query = "2.1.0"
+vigem-client = "0.1.4"
